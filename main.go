@@ -42,18 +42,9 @@ const encryptionKey = "hardcoded-encryption-key"       // Simple hardcoded key
 
 // Config holds the configuration details for ransomguard
 type Config struct {
-	smtpServer     string `json:"smtp_server"` // "smtp.example.com"
-	smtpPort       string `json:"smtp_port"` // "587"
-	smtpUsername   string `json:"smtp_usr"` //"noreply@example.com" , Your email address
-	smtpPassword   string `json:"smtp_pwd"` //"yourpassword" , Your email password
-	senderEmail    string `json:"sender_email"` // "noreply@example.com" , Sender email
-	configFile =   string `json:"config_file"` //"/usr/local/ransomguard/config.txt" , Path to config file
+	iftttURL	     string         `json:"IFTTT_URL"`
+	configFile	     string         `json:"config_file"` //"/usr/local/ransomguard/config.txt" , Path to config file
 	HoneypotFiles        []HoneypotFile `json:"honeypot_files"`
-	CustomerEmail        string         `json:"customer_email"`
-	CompanyEmail         string         `json:"company_email"`
-	StaticFileKeywords   []string       `json:"static_file_keywords"`
-	SecureProcesses      []string       `json:"secure_processes"`
-	UnsecureAPIChainCalls []string      `json:"unsecure_api_chain_calls"`
 	RollbackWant         bool           `json:"rollback_want"`
 	RollbackMethod       string         `json:"rollback_method"`
 	RollbackParams       []string       `json:"rollback_params"`
@@ -134,6 +125,8 @@ func main() {
 }
 
 func handleAlert(alertChan <-chan Alert, config Config) {
+    
+    log.Printf("ALERT: %s detected on process: %s", alert.Description, alert.ProcessName)
     // Open a connection to syslog
     logWriter, err := syslog.New(syslog.LOG_ALERT|syslog.LOG_USER, "RansomGuard")
     if err != nil {
@@ -147,29 +140,50 @@ func handleAlert(alertChan <-chan Alert, config Config) {
 
     // Listen for alerts on the channel
     for alert := range alertChan {
-        // Log the alert to syslog
+        // Step 1: Log the alert to syslog
         syslogMsg := fmt.Sprintf("RANSOMWARE_DETECTED: %s - Process: %s (PID: %d)", alert.Description, alert.ProcessName, alert.ProcessID)
         logWriter.Alert(syslogMsg)
         fmt.Println("Alert sent to syslog:", syslogMsg) // for local confirmation
 
-		// Send IFTTT Alert
-		err = sendIFTTTAlert(alert, config)
-		if err != nil {
-			log.Printf("Error sending alert to IFTTT: %v", err)
-		}
-
+	// Step 2: Send IFTTT Alert
+	err = sendIFTTTAlert(alert, config)
+	if err != nil {
+		log.Printf("Error sending alert to IFTTT: %v", err)
+	}
         // Create and display the TUI pop-up alert
         modal := tview.NewModal().
-            SetText(fmt.Sprintf("⚠️ WARNING: %s\nProcess: %s (PID: %d)", alert.Description, alert.ProcessName, alert.ProcessID)).
-            AddButtons([]string{"Acknowledge"}).
-            SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-                app.Stop() // Close the app when acknowledged
-            })
-
+        SetText(fmt.Sprintf("⚠️ WARNING: %s\nProcess: %s (PID: %d)", alert.Description, alert.ProcessName, alert.ProcessID)).
+        AddButtons([]string{"Acknowledge"}).
+        SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+        	app.Stop() // Close the app when acknowledged
+        })
         // Set the modal as the root and run the application
         if err := app.SetRoot(modal, true).Run(); err != nil {
             fmt.Printf("Error displaying TUI alert: %v\n", err)
         }
+	// Step 3: Stop the process that triggered the alert
+        err := TerminateProcess(alert.ProcessID)
+        if err != nil {
+    	    log.Printf("Failed to terminate process %d: %v", alert.ProcessID, err)
+        } else {
+    	    log.Printf("Process %d terminated successfully.", alert.ProcessID)
+        }
+
+        // Step 4: Send the process file to quarantine
+        err = QuarantineProcess(alert.ProcessName)
+        if err != nil {
+    	    log.Printf("Failed to quarantine process: %v", err)
+        } else {
+    	    log.Printf("Process %s moved to quarantine.", alert.ProcessName)
+        }
+    }
+    if config.RollbackWant {
+	err = internal.PerformRollback(config)
+	if err != nil {
+		log.Printf("Rollback failed: %v", err)
+	} else {
+		log.Println("Rollback completed successfully.")
+	}
     }
 }
 
@@ -195,7 +209,6 @@ func sendIFTTTAlert(alert Alert, config Config) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("IFTTT returned non-200 status: %v", resp.Status)
 	}
-
 	fmt.Println("Alert sent to IFTTT:", alert)
 	return nil
 }
@@ -448,5 +461,46 @@ func QuarantineProcess(processName string) error {
 		return fmt.Errorf("failed to move process to quarantine: %v", err)
 	}
 
+	return nil
+}
+func PerformRollback(config *Config) error {
+	// Check if rollback is enabled by customer
+	if !config.RollbackWant {
+		log.Println("Rollback functionality is disabled by the customer.")
+		return nil
+	}
+
+	// Switch based on the rollback method provided in the config
+	switch config.RollbackMethod {
+	case "btrfs":
+		return rollbackBtrfs(config.RollbackParams)
+	// Add more rollback methods as needed
+	default:
+		log.Printf("Unsupported rollback method: %s", config.RollbackMethod)
+		return fmt.Errorf("unsupported rollback method")
+	}
+}
+
+// rollbackBtrfs handles rollback using the BTRFS file system
+func rollbackBtrfs(params []string) error {
+	if len(params) < 1 {
+		return fmt.Errorf("no rollback parameters provided for BTRFS")
+	}
+
+	subvolume := params[0]           // e.g., "subvolume" or path to snapshot
+	restorePath := params[1]         // e.g., "/restored-directory"
+	snapshotPath := params[2]        // e.g., "/backup/snapshot"
+
+	log.Printf("Starting BTRFS rollback: subvolume: %s, snapshot: %s, restorePath: %s", subvolume, snapshotPath, restorePath)
+
+	// Example command (customize based on your rollback logic)
+	cmd := exec.Command("btrfs", "subvolume", "snapshot", snapshotPath, restorePath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Failed to rollback using BTRFS: %v\nCommand output: %s", err, string(output))
+		return fmt.Errorf("rollback failed: %v", err)
+	}
+
+	log.Printf("BTRFS rollback successful. Restored snapshot to: %s", restorePath)
 	return nil
 }

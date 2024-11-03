@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/rivo/tview"
+	//"github.com/rivo/tview"
 )
 
 const encryptionKey = "hardcoded-encryption-key" // Simple hardcoded key
@@ -120,8 +120,8 @@ func handleAlert(alertChan <-chan Alert, config Config) {
 	}
 	defer logWriter.Close()
 
-	// Initialize the TUI application
-	app := tview.NewApplication()
+	//Remove this part : Initialize the TUI application
+	//app := tview.NewApplication()
 
 	// Listen for alerts on the channel
 	for alert := range alertChan {
@@ -130,11 +130,13 @@ func handleAlert(alertChan <-chan Alert, config Config) {
 		logWriter.Alert(syslogMsg)
 		fmt.Println("Alert sent to syslog:", syslogMsg) // for local confirmation
 
+		
 		// Step 2: Send IFTTT Alert
 		err = sendIFTTTAlert(alert, config)
 		if err != nil {
 			log.Printf("Error sending alert to IFTTT: %v", err)
 		}
+		/*
 		// Create and display the TUI pop-up alert
 		modal := tview.NewModal().
 			SetText(fmt.Sprintf("⚠️ WARNING: %s\nProcess: %s (PID: %d)", alert.Description, alert.ProcessName, alert.ProcessID)).
@@ -145,8 +147,11 @@ func handleAlert(alertChan <-chan Alert, config Config) {
 		// Set the modal as the root and run the application
 		if err := app.SetRoot(modal, true).Run(); err != nil {
 			fmt.Printf("Error displaying TUI alert: %v\n", err)
-		}
-		// Step 3: Stop the process that triggered the alert
+		}*/
+		// Step 3: Print on Screen
+		redBold := "\033[1;31m%s\033[0m"
+		fmt.Printf(redBold, "⚠️  WARNING: %s\nProcess: %s (PID: %d)", alert.Description, alert.ProcessName, alert.ProcessID))
+		// Step 4: Stop the process that triggered the alert
 		err := TerminateProcess(alert.ProcessID)
 		if err != nil {
 			log.Printf("Failed to terminate process %d: %v", alert.ProcessID, err)
@@ -154,7 +159,7 @@ func handleAlert(alertChan <-chan Alert, config Config) {
 			log.Printf("Process %d terminated successfully.", alert.ProcessID)
 		}
 
-		// Step 4: Send the process file to quarantine
+		// Step 5: Send the process file to quarantine
 		err = QuarantineProcess(alert.ProcessName)
 		if err != nil {
 			log.Printf("Failed to quarantine process: %v", err)

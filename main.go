@@ -27,11 +27,11 @@ import (
 )
 
 const encryptionKey = "hardcoded-encryption-key" // Simple hardcoded key
+const configFile = "config.cfg"
 
 // Config holds the configuration details for ransomguard
 type Config struct {
 	iftttURL      string         `json:"IFTTT_URL"`
-	configFile    string         `json:"config_file"` //"/usr/local/ransomguard/config.txt" , Path to config file
 	HoneypotFiles []HoneypotFile `json:"honeypot_files"`
 }
 

@@ -31,8 +31,8 @@ const configFile = "config.cfg"
 
 // Config holds the configuration details for ransomguard
 type Config struct {
-	iftttURL      string         `json:"IFTTT_URL"`
-	HoneypotFiles []HoneypotFile `json:"honeypot_files"`
+    IftttURL      string         `json:"IFTTT_URL"`
+    HoneypotFiles []HoneypotFile `json:"honeypot_files"`
 }
 
 // HoneypotFile represents the configuration for a honeypot file.
@@ -100,7 +100,7 @@ func main() {
 	// Monitor for alerts from all goroutines
 	go func() {
 		for alert := range alertChan {
-			handleAlert(alert, config)
+			go handleAlert(alert, config)
 		}
 	}()
 

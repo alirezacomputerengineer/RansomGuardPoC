@@ -31,8 +31,9 @@ const configFile = "config.cfg"
 
 // Config holds the configuration details for ransomguard
 type Config struct {
-    IftttURL      string         `json:"IFTTT_URL"`
-    HoneypotFiles []HoneypotFile `json:"honeypot_files"`
+    mailFlag      bool           `json:"Mail_Flag"`
+    mailAddress   string         `json:"Mail_Address"`
+    HoneypotFiles []HoneypotFile `json:"Honeypot_Files"`
 }
 
 // HoneypotFile represents the configuration for a honeypot file.
@@ -165,32 +166,6 @@ func handleAlert(alertChan <-chan Alert, config Config) {
 			log.Printf("Process %s moved to quarantine.", alert.ProcessName)
 		}
 	}
-}
-
-func sendIFTTTAlert(alert Alert, config Config) error {
-	jsonData, err := json.Marshal(alert)
-	if err != nil {
-		return fmt.Errorf("failed to marshal alert: %v", err)
-	}
-
-	req, err := http.NewRequest("POST", config.iftttURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send alert to IFTTT: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("IFTTT returned non-200 status: %v", resp.Status)
-	}
-	fmt.Println("Alert sent to IFTTT:", alert)
-	return nil
 }
 
 func CreateHoneypotFiles(config *Config) error {
